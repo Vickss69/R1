@@ -134,7 +134,7 @@ def detect_face_shape(image_path):
             scaleFactor=1.1,
             minNeighbors=5,
             minSize=(30, 30)
-            
+        )
         if len(faces) == 0:
             return 0
 
