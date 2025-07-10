@@ -12,20 +12,24 @@ import urllib.request
 # Preload models at startup
 @st.cache_resource
 def load_models():
-    # Download face landmark model if missing
-    predictor_path = "shape_predictor_68_face_landmarks.dat"
-    if not os.path.exists(predictor_path):
-        with st.spinner("Downloading facial landmark model (60MB)... This may take a minute"):
-            model_url = "https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat"
-            urllib.request.urlretrieve(model_url, predictor_path)
-    
-    # Load models
-    detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor(predictor_path)
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-    
-    return detector, predictor, face_cascade, eye_cascade
+    try:
+        # Try to load dlib-based models
+        predictor_path = "shape_predictor_68_face_landmarks.dat"
+        if not os.path.exists(predictor_path):
+            with st.spinner("Downloading facial landmark model..."):
+                model_url = "https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat"
+                urllib.request.urlretrieve(model_url, predictor_path)
+        
+        detector = dlib.get_frontal_face_detector()
+        predictor = dlib.shape_predictor(predictor_path)
+        return detector, predictor, None, None
+        
+    except Exception as e:
+        st.warning(f"dlib failed to load: {str(e)}. Using OpenCV only.")
+        # Fallback to OpenCV models
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        return None, None, face_cascade, eye_cascade
 
 # UI Setup
 st.set_page_config(page_title="Beauty Comparator", page_icon="✨", layout="wide")
@@ -215,40 +219,69 @@ def analyze_hair(image_path):
         return 0
 
 def analyze_image(image_path):
-    face_shape = analyze_face_shape(image_path) * 100 / 26
-    skin = analyze_skin_quality(image_path)
-    jawline = analyze_jawline(image_path)
-    eye_shape, eye_color = analyze_eyes(image_path)
-    hair = analyze_hair(image_path)
-    
-    # Weighted composite score
-    weights = {
-        'face_shape': 0.25,
-        'skin': 0.30,
-        'jawline': 0.15,
-        'eye_shape': 0.10,
-        'eye_color': 0.10,
-        'hair': 0.10
-    }
-    
-    final_score = (
-        face_shape * weights['face_shape'] +
-        skin * weights['skin'] +
-        jawline * weights['jawline'] +
-        eye_shape * weights['eye_shape'] +
-        eye_color * weights['eye_color'] +
-        hair * weights['hair']
-    )
-    
-    return {
-        'face_shape': face_shape,
-        'skin': skin,
-        'jawline': jawline,
-        'eye_shape': eye_shape,
-        'eye_color': eye_color,
-        'hair': hair,
-        'final_score': final_score
-    }
+    try:
+        img = preprocess_image(image_path)
+        if img is None:
+            return {
+                'face_shape': 0, 'skin': 0, 'jawline': 0,
+                'eye_shape': 0, 'eye_color': 0, 'hair': 0,
+                'final_score': 0
+            }
+        
+        # Initialize scores
+        face_shape = skin = jawline = eye_shape = eye_color = hair = 0
+        
+        # Only run dlib-based features if models loaded
+        if detector and predictor:
+            try:
+                face_shape = analyze_face_shape(image_path) * 100 / 26
+                skin = analyze_skin_quality(image_path)
+                jawline = analyze_jawline(image_path)
+                eye_shape, eye_color = analyze_eyes(image_path)
+            except Exception:
+                pass
+        
+        # OpenCV-based features
+        try:
+            hair = analyze_hair(image_path)
+        except Exception:
+            pass
+        
+        # Calculate final score with available features
+        weights = {
+            'face_shape': 0.25,
+            'skin': 0.30,
+            'jawline': 0.15,
+            'eye_shape': 0.10,
+            'eye_color': 0.10,
+            'hair': 0.10
+        }
+        
+        final_score = (
+            face_shape * weights['face_shape'] +
+            skin * weights['skin'] +
+            jawline * weights['jawline'] +
+            eye_shape * weights['eye_shape'] +
+            eye_color * weights['eye_color'] +
+            hair * weights['hair']
+        )
+        
+        return {
+            'face_shape': face_shape,
+            'skin': skin,
+            'jawline': jawline,
+            'eye_shape': eye_shape,
+            'eye_color': eye_color,
+            'hair': hair,
+            'final_score': final_score
+        }
+        
+    except Exception:
+        return {
+            'face_shape': 0, 'skin': 0, 'jawline': 0,
+            'eye_shape': 0, 'eye_color': 0, 'hair': 0,
+            'final_score': 0
+        }
 
 def create_winner_image(image_path, winner_text="HOTTER"):
     try:
