@@ -86,7 +86,7 @@ def calculate_face_shape(landmarks):
         cheek_width = np.linalg.norm(landmarks[8] - landmarks[3])
 
         # Estimate forehead region
-        forehead_height = (landmarks[1][1] + landmarks[2][1]) // 2 - landmarks[0][1])
+        forehead_height = ((landmarks[1][1] + landmarks[2][1]) // 2 - landmarks[0][1])
         total_face_height = face_height + forehead_height
 
         # Ratios for classification
@@ -133,8 +133,7 @@ def detect_face_shape(image_path):
             gray, 
             scaleFactor=1.1,
             minNeighbors=5,
-            minSize=(30, 30)
-        )
+            minSize=(30, 30))
         if len(faces) == 0:
             return 0
 
@@ -343,7 +342,7 @@ def detect_eyes_shape(image_path):
             left_eye_shape = calculate_eye_shape(left_eye)
             right_eye_shape = calculate_eye_shape(right_eye)
 
-            return ((left_eye_shape + right_eye_shape) * 100 / 72)
+            return (((left_eye_shape + right_eye_shape) * 100) / 72)
         
         return 0
     except Exception as e:
