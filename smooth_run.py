@@ -4,7 +4,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import tempfile
 import os
-import time
 import mediapipe as mp
 
 st.info("📝 NOTE: The present comparison is only in the image, it's not in real life.")
@@ -13,8 +12,6 @@ st.warning("⚠️ DISCLAIMER: Don't misuse this application.")
 # Initialize MediaPipe face detection and face mesh
 mp_face_detection = mp.solutions.face_detection
 mp_face_mesh = mp.solutions.face_mesh
-face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, min_detection_confidence=0.5)
 
 # Set page title and description
 st.title("Know who's more Beautiful")
@@ -62,209 +59,214 @@ def calculate_face_shape(landmarks, image_width, image_height):
 
 def detect_face_shape(image_path):
     try:
-        image = cv2.imread(image_path)
-        if image is None:
-            return 0
-            
-        # Resize image
-        height, width = image.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / max(height, width)
-            image = cv2.resize(image, (int(width * scale), int(height * scale)))
+        with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, min_detection_confidence=0.5) as face_mesh:
+            image = cv2.imread(image_path)
+            if image is None:
+                return 0
+                
+            # Resize image
             height, width = image.shape[:2]
+            max_dim = 800
+            if max(height, width) > max_dim:
+                scale = max_dim / max(height, width)
+                image = cv2.resize(image, (int(width * scale), int(height * scale)))
+                height, width = image.shape[:2]
+                
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # Detect faces
-        results = face_mesh.process(rgb_image)
-        if not results.multi_face_landmarks:
-            return 0
+            # Detect faces
+            results = face_mesh.process(rgb_image)
+            if not results.multi_face_landmarks:
+                return 0
 
-        landmarks = results.multi_face_landmarks[0].landmark
-        face_shape = calculate_face_shape(landmarks, width, height)
-        return face_shape * 100 / 26
+            landmarks = results.multi_face_landmarks[0].landmark
+            face_shape = calculate_face_shape(landmarks, width, height)
+            return face_shape * 100 / 26
     except Exception as e:
         st.error(f"Error in face shape detection: {e}")
         return 0
 
 def get_average_skin_color(image_path):
     try:
-        image = cv2.imread(image_path)
-        if image is None:
-            return 0
-            
-        # Resize image
-        height, width = image.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / max(height, width)
-            image = cv2.resize(image, (int(width * scale), int(height * scale)))
-            
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # Detect faces
-        results = face_detection.process(rgb_image)
-        if not results.detections:
-            return 0
-        
-        # Extract face regions
-        skin_pixels = []
-        for detection in results.detections:
-            bbox = detection.location_data.relative_bounding_box
-            x, y, w, h = int(bbox.xmin * width), int(bbox.ymin * height), \
-                         int(bbox.width * width), int(bbox.height * height)
-            
-            # Adjust coordinates
-            x, y = max(0, x), max(0, y)
-            w, h = min(width - x, w), min(height - y, h)
-            
-            if w <= 0 or h <= 0:
-                continue
+        with mp_face_detection.FaceDetection(min_detection_confidence=0.5) as face_detection:
+            image = cv2.imread(image_path)
+            if image is None:
+                return 0
                 
-            face_roi = image[y:y+h, x:x+w]
+            # Resize image
+            height, width = image.shape[:2]
+            max_dim = 800
+            if max(height, width) > max_dim:
+                scale = max_dim / max(height, width)
+                image = cv2.resize(image, (int(width * scale), int(height * scale)))
+                height, width = image.shape[:2]
+                
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-            # Sample pixels
-            step = max(1, min(h, w) // 20)
-            for i in range(0, h, step):
-                for j in range(0, w, step):
-                    skin_pixels.append(face_roi[i, j])
-        
-        if not skin_pixels:
-            return 0
+            # Detect faces
+            results = face_detection.process(rgb_image)
+            if not results.detections:
+                return 0
             
-        # Compute average
-        skin_pixels = np.array(skin_pixels)
-        avg_bgr = np.mean(skin_pixels, axis=0)
-        a, b, c = avg_bgr
-        return np.sqrt(a**2 + b**2 + c**2)
+            # Extract face regions
+            skin_pixels = []
+            for detection in results.detections:
+                bbox = detection.location_data.relative_bounding_box
+                x, y, w, h = int(bbox.xmin * width), int(bbox.ymin * height), \
+                            int(bbox.width * width), int(bbox.height * height)
+                
+                # Adjust coordinates
+                x, y = max(0, x), max(0, y)
+                w, h = min(width - x, w), min(height - y, h)
+                
+                if w <= 0 or h <= 0:
+                    continue
+                    
+                face_roi = image[y:y+h, x:x+w]
+                
+                # Sample pixels
+                step = max(1, min(h, w) // 20)
+                for i in range(0, h, step):
+                    for j in range(0, w, step):
+                        skin_pixels.append(face_roi[i, j])
+            
+            if not skin_pixels:
+                return 0
+                
+            # Compute average
+            skin_pixels = np.array(skin_pixels)
+            avg_bgr = np.mean(skin_pixels, axis=0)
+            a, b, c = avg_bgr
+            return np.sqrt(a**2 + b**2 + c**2)
     except Exception as e:
         st.error(f"Error in skin color detection: {e}")
         return 0
 
 def detect_eyes_shape(image_path):
     try:
-        image = cv2.imread(image_path)
-        if image is None:
-            return 0
-            
-        # Resize image
-        height, width = image.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / max(height, width)
-            image = cv2.resize(image, (int(width * scale), int(height * scale)))
-            height, width = image.shape[:2]
-            
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # Detect face mesh
-        results = face_mesh.process(rgb_image)
-        if not results.multi_face_landmarks:
-            return 0
-
-        landmarks = results.multi_face_landmarks[0].landmark
-        
-        # Eye indices for MediaPipe
-        LEFT_EYE_INDICES = [33, 133, 159, 145, 158, 153]
-        RIGHT_EYE_INDICES = [362, 385, 387, 380, 373, 374]
-        
-        def get_eye_aspect_ratio(eye_indices):
-            points = []
-            for idx in eye_indices:
-                x = landmarks[idx].x * width
-                y = landmarks[idx].y * height
-                points.append((x, y))
+        with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, min_detection_confidence=0.5) as face_mesh:
+            image = cv2.imread(image_path)
+            if image is None:
+                return 0
                 
-            # Calculate eye aspect ratio
-            width_eye = np.linalg.norm(np.array(points[0]) - np.array(points[3]))
-            height_eye = (np.linalg.norm(np.array(points[1]) - np.array(points[4])) + 
-                         np.linalg.norm(np.array(points[2]) - np.array(points[5]))) / 2
-            return height_eye / max(width_eye, 1e-6)  # Avoid division by zero
+            # Resize image
+            height, width = image.shape[:2]
+            max_dim = 800
+            if max(height, width) > max_dim:
+                scale = max_dim / max(height, width)
+                image = cv2.resize(image, (int(width * scale), int(height * scale)))
+                height, width = image.shape[:2]
+                
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # Detect face mesh
+            results = face_mesh.process(rgb_image)
+            if not results.multi_face_landmarks:
+                return 0
 
-        left_eye_ratio = get_eye_aspect_ratio(LEFT_EYE_INDICES)
-        right_eye_ratio = get_eye_aspect_ratio(RIGHT_EYE_INDICES)
-        
-        # Calculate shape score
-        def shape_score(ratio):
-            if ratio < 0.25: return 38
-            elif ratio <= 0.35: return 28
-            else: return 22
-        
-        left_score = shape_score(left_eye_ratio)
-        right_score = shape_score(right_eye_ratio)
-        
-        return ((left_score + right_score) * 100) / 72
+            landmarks = results.multi_face_landmarks[0].landmark
+            
+            # Eye indices for MediaPipe
+            LEFT_EYE_INDICES = [33, 133, 159, 145, 158, 153]
+            RIGHT_EYE_INDICES = [362, 385, 387, 380, 373, 374]
+            
+            def get_eye_aspect_ratio(eye_indices):
+                points = []
+                for idx in eye_indices:
+                    x = landmarks[idx].x * width
+                    y = landmarks[idx].y * height
+                    points.append((x, y))
+                    
+                # Calculate eye aspect ratio
+                width_eye = np.linalg.norm(np.array(points[0]) - np.array(points[3]))
+                height_eye = (np.linalg.norm(np.array(points[1]) - np.array(points[4])) + 
+                            np.linalg.norm(np.array(points[2]) - np.array(points[5]))) / 2
+                return height_eye / max(width_eye, 1e-6)  # Avoid division by zero
+
+            left_eye_ratio = get_eye_aspect_ratio(LEFT_EYE_INDICES)
+            right_eye_ratio = get_eye_aspect_ratio(RIGHT_EYE_INDICES)
+            
+            # Calculate shape score
+            def shape_score(ratio):
+                if ratio < 0.25: return 38
+                elif ratio <= 0.35: return 28
+                else: return 22
+            
+            left_score = shape_score(left_eye_ratio)
+            right_score = shape_score(right_eye_ratio)
+            
+            return ((left_score + right_score) * 100) / 72
     except Exception as e:
         st.error(f"Error in eye shape detection: {e}")
         return 0
 
 def detect_eye_colors(image_path):
     try:
-        image = cv2.imread(image_path)
-        if image is None:
-            return 0
-            
-        # Resize image
-        height, width = image.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / max(height, width)
-            image = cv2.resize(image, (int(width * scale), int(height * scale)))
+        with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, min_detection_confidence=0.5) as face_mesh:
+            image = cv2.imread(image_path)
+            if image is None:
+                return 0
+                
+            # Resize image
             height, width = image.shape[:2]
+            max_dim = 800
+            if max(height, width) > max_dim:
+                scale = max_dim / max(height, width)
+                image = cv2.resize(image, (int(width * scale), int(height * scale)))
+                height, width = image.shape[:2]
+                
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # Detect face mesh
-        results = face_mesh.process(rgb_image)
-        if not results.multi_face_landmarks:
-            return 0
+            # Detect face mesh
+            results = face_mesh.process(rgb_image)
+            if not results.multi_face_landmarks:
+                return 0
 
-        landmarks = results.multi_face_landmarks[0].landmark
-        
-        # Eye indices
-        LEFT_EYE_INDICES = [33, 133, 159, 145, 158, 153]
-        RIGHT_EYE_INDICES = [362, 385, 387, 380, 373, 374]
-        
-        def get_eye_region(indices):
-            points = []
-            for idx in indices:
-                x = int(landmarks[idx].x * width)
-                y = int(landmarks[idx].y * height)
-                points.append((x, y))
-            return points
-        
-        left_eye_points = get_eye_region(LEFT_EYE_INDICES)
-        right_eye_points = get_eye_region(RIGHT_EYE_INDICES)
-        
-        # Create masks for eye regions
-        def extract_eye_region(points):
-            mask = np.zeros((height, width), dtype=np.uint8)
-            pts = np.array(points, dtype=np.int32)
-            cv2.fillPoly(mask, [pts], 255)
-            eye_region = cv2.bitwise_and(image, image, mask=mask)
-            return eye_region[np.where(mask == 255)]
-        
-        left_eye_pixels = extract_eye_region(left_eye_points)
-        right_eye_pixels = extract_eye_region(right_eye_points)
-        
-        # Classify eye color
-        def classify_eye_color(pixels):
-            if len(pixels) == 0:
-                return 15
-            avg_color = np.mean(pixels, axis=0)
-            b, g, r = avg_color
-            if r > 100 and g < 70 and b < 40: return 5
-            elif r > 140 and g > 100 and b < 60: return 19
-            elif r < 100 and g < 100 and b > 120: return 29
-            elif r < 100 and g > 120 and b < 100: return 14
-            elif r > 100 and g > 80 and b < 60: return 9
-            elif r < 100 and g < 100 and b < 80: return 24
-            else: return 15
-        
-        left_score = classify_eye_color(left_eye_pixels)
-        right_score = classify_eye_color(right_eye_pixels)
-        return ((left_score + right_score) / 2) * 100 / 30
+            landmarks = results.multi_face_landmarks[0].landmark
+            
+            # Eye indices
+            LEFT_EYE_INDICES = [33, 133, 159, 145, 158, 153]
+            RIGHT_EYE_INDICES = [362, 385, 387, 380, 373, 374]
+            
+            def get_eye_region(indices):
+                points = []
+                for idx in indices:
+                    x = int(landmarks[idx].x * width)
+                    y = int(landmarks[idx].y * height)
+                    points.append((x, y))
+                return points
+            
+            left_eye_points = get_eye_region(LEFT_EYE_INDICES)
+            right_eye_points = get_eye_region(RIGHT_EYE_INDICES)
+            
+            # Create masks for eye regions
+            def extract_eye_region(points):
+                mask = np.zeros((height, width), dtype=np.uint8)
+                pts = np.array(points, dtype=np.int32)
+                cv2.fillPoly(mask, [pts], 255)
+                eye_region = cv2.bitwise_and(image, image, mask=mask)
+                return eye_region[np.where(mask == 255)]
+            
+            left_eye_pixels = extract_eye_region(left_eye_points)
+            right_eye_pixels = extract_eye_region(right_eye_points)
+            
+            # Classify eye color
+            def classify_eye_color(pixels):
+                if len(pixels) == 0:
+                    return 15
+                avg_color = np.mean(pixels, axis=0)
+                b, g, r = avg_color
+                if r > 100 and g < 70 and b < 40: return 5
+                elif r > 140 and g > 100 and b < 60: return 19
+                elif r < 100 and g < 100 and b > 120: return 29
+                elif r < 100 and g > 120 and b < 100: return 14
+                elif r > 100 and g > 80 and b < 60: return 9
+                elif r < 100 and g < 100 and b < 80: return 24
+                else: return 15
+            
+            left_score = classify_eye_color(left_eye_pixels)
+            right_score = classify_eye_color(right_eye_pixels)
+            return ((left_score + right_score) / 2) * 100 / 30
     except Exception as e:
         st.error(f"Error in eye color detection: {e}")
         return 0
@@ -321,8 +323,15 @@ def mark_winner(image_path, is_winner=True):
             
         # Calculate text position
         img_width, img_height = image.size
-        text_width = font.getmask(text).getbbox()[2]
-        text_height = font.getmask(text).getbbox()[3]
+        try:
+            # For newer Pillow versions
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except AttributeError:
+            # For older Pillow versions
+            text_width, text_height = draw.textsize(text, font=font)
+            
         x = (img_width - text_width) // 2
         y = img_height - text_height - 20
         
@@ -421,7 +430,8 @@ if uploaded_file1 is not None and uploaded_file2 is not None:
         # Process first image
         def update_progress(percent, message=""):
             progress_bar.progress(percent)
-            status_text.text(message)
+            if message:
+                status_text.text(message)
         
         update_progress(0, "Analyzing first image...")
         metrics1 = analyze_image(temp_file1_path, 
@@ -450,7 +460,7 @@ if uploaded_file1 is not None and uploaded_file2 is not None:
         col3, col4 = st.columns(2)
         
         with col3:
-            st.image(uploaded_file1, caption="Image 1")
+            st.image(uploaded_file1, caption="Image 1", use_column_width=True)
             st.metric("Score", f"{s1:.2f}")
             
             with st.expander("Detailed Scores for Image 1"):
@@ -461,7 +471,7 @@ if uploaded_file1 is not None and uploaded_file2 is not None:
                 st.write(f"Hair Score: {metrics1['hair_score']:.2f}")
         
         with col4:
-            st.image(uploaded_file2, caption="Image 2") 
+            st.image(uploaded_file2, caption="Image 2", use_column_width=True) 
             st.metric("Score", f"{s2:.2f}")
             
             with st.expander("Detailed Scores for Image 2"):
